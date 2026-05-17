@@ -1,6 +1,9 @@
 # risk.py
 import pandas as pd
 import os
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 class RiskEngine:
     def __init__(self, equity=1000, risk_pct=0.01):
@@ -14,7 +17,7 @@ class RiskEngine:
 
     def on_new_trade(self, trade_request, strategy_name="default"):
         if strategy_name in self.paused_strategies:
-            print(f"[WARN] 策略{strategy_name}已暫停，不下單")
+            _log.warning(f"策略{strategy_name}已暫停，不下單")
             return 0
         # 信號分級，動態分配部位
         level = None
@@ -52,7 +55,7 @@ class RiskEngine:
             # 自動停單條件
             if drawdown > self.max_drawdown_pct or self.strategy_stats[strategy]['consecutive_loss'] >= self.max_consecutive_loss:
                 self.paused_strategies.add(strategy)
-                print(f"[RISK] 策略{strategy}已達停單條件，暫停交易！")
+                _log.warning(f"策略{strategy}已達停單條件，暫停交易！")
             else:
                 self.paused_strategies.discard(strategy)
 

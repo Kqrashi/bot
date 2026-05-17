@@ -1,6 +1,7 @@
 # strategy.py
 import pandas as pd
 import pandas_ta as ta
+from exchange_helper import ExchangeHelper
 
 # === OB/FVG ===
 def detect_fvg(bars, tol=0.004, direction="long"):
@@ -88,6 +89,16 @@ def judge_signal_level(bars, htf_bars, close, direction="long", tol=0.004):
 
 
 
+def _passes_oi_cvd_filter(side, oi_df, bars_for_cvd):
+    checks = []
+    if oi_df is not None and len(oi_df) >= 6:
+        checks.append(bool(oi_df["oi"].iloc[-1] > oi_df["oi"].iloc[-6]))
+    if bars_for_cvd is not None:
+        _, cvd_change = ExchangeHelper.calc_cvd(bars_for_cvd)
+        checks.append(cvd_change > 0 if side == "long" else cvd_change < 0)
+    return all(checks)
+
+
 # === SMCStrategy 多空通用 ===
 class SMCStrategy:
     def __init__(self, lookback=3, tol_fvg=0.004, tp_r=1.2):
@@ -95,7 +106,7 @@ class SMCStrategy:
         self.tol_fvg = tol_fvg
         self.tp_r = tp_r
 
-    def check_entry_signal(self, bar, bars, htf_bars, **kwargs):
+    def check_entry_signal(self, bar, bars, htf_bars, oi_df=None, bars_for_cvd=None, **kwargs):
         close = bars["close"].iloc[-1]
         rsi = ta.rsi(bars['close'], timeperiod=14)
         ma_fast = bars['close'].rolling(window=10).mean().iloc[-1]
@@ -123,6 +134,8 @@ class SMCStrategy:
                     stop = bars["low"].iloc[-1] * 0.995
                 tp = close * self.tp_r
                 info = {"stop": stop, "tp": tp, "level": level}
+                if not _passes_oi_cvd_filter("long", oi_df, bars_for_cvd):
+                    return False, "", {}
                 return signal, side, info
 
         # === 空單判斷 ===
@@ -146,6 +159,8 @@ class SMCStrategy:
                     stop = bars["high"].iloc[-1] * 1.005
                 tp = close * (2 - self.tp_r)
                 info = {"stop": stop, "tp": tp, "level": level}
+                if not _passes_oi_cvd_filter("short", oi_df, bars_for_cvd):
+                    return False, "", {}
                 return signal, side, info
 
         return False, "", {}
@@ -162,7 +177,7 @@ LEVEL_RANK = {"A": 3, "AB": 2, "B": 1, "C": 0}
 
 # === 放寬條件版 SMCStrategyLoose ===
 class SMCStrategyLoose(SMCStrategy):
-    def check_entry_signal(self, bar, bars, htf_bars, **kwargs):
+    def check_entry_signal(self, bar, bars, htf_bars, oi_df=None, bars_for_cvd=None, **kwargs):
         close = bars["close"].iloc[-1]
         level_long = judge_signal_level(bars, htf_bars, close, direction="long", tol=self.tol_fvg)
         level_short = judge_signal_level(bars, htf_bars, close, direction="short", tol=self.tol_fvg)
@@ -203,6 +218,8 @@ class SMCStrategyLoose(SMCStrategy):
             tp = close * (2 - self.tp_r)
 
         info = {"stop": stop, "tp": tp, "level": level}
+        if not _passes_oi_cvd_filter(side, oi_df, bars_for_cvd):
+            return False, "", {}
         return True, side, info
 
 # === SMC + 趨勢過濾（僅保留原有多單邏輯） ===

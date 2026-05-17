@@ -1,6 +1,7 @@
 # main.py
 import os
 import time
+import json
 import pandas as pd
 from datetime import datetime
 
@@ -8,6 +9,33 @@ from config import SYMBOLS, TIMEFRAME, STRATEGY_PARAMS, RISK_PARAMS, TRADE_LOG_D
 from strategy import STRATEGY_MAP
 from exchange_helper import ExchangeHelper
 from risk import RiskEngine
+from logger import get_logger
+
+logger = get_logger(__name__)
+
+STATE_FILE = "open_trades_state.json"
+
+
+def _save_open_trades(open_trades: dict) -> None:
+    try:
+        serializable = {f"{k[0]}|{k[1]}": v for k, v in open_trades.items()}
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, ensure_ascii=False, default=str)
+    except Exception as e:
+        logger.warning(f"寫入 open_trades 狀態失敗: {e}")
+
+
+def _load_open_trades() -> dict:
+    if not os.path.isfile(STATE_FILE):
+        return {}
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        return {tuple(k.split("|", 1)): v for k, v in raw.items()}
+    except Exception as e:
+        logger.warning(f"讀取 open_trades 狀態失敗，從空白開始: {e}")
+        return {}
+
 
 def safe_append_to_csv(trade_record, csv_path, backup_path=None, max_retry=3):
     for attempt in range(max_retry):
@@ -20,19 +48,20 @@ def safe_append_to_csv(trade_record, csv_path, backup_path=None, max_retry=3):
                 df.to_csv(backup_path, mode="a", header=not file_exists_bak, index=False)
             return True
         except Exception as e:
-            print(f"[WARN] 寫入csv失敗: {e}")
+            logger.warning(f"寫入csv失敗: {e}")
             time.sleep(2)
-    print(f"[FATAL] 多次嘗試寫檔失敗，資料暫存buffer等待下次寫入！")
+    logger.error("多次嘗試寫檔失敗，資料暫存buffer等待下次寫入！")
     return False
+
 
 def main():
     exchange = ExchangeHelper()
     risk = RiskEngine(equity=START_EQUITY, risk_pct=RISK_PARAMS.get("risk_pct", 0.01))
-    open_trades = {}        # {(symbol, strategy): entry_info}
+    open_trades = _load_open_trades()
     trade_records_buffer = []
 
     while True:
-        print("進入主迴圈...")
+        logger.info("進入主迴圈...")
         try:
             today = datetime.now()
             month_folder = today.strftime("%Y-%m")
@@ -49,19 +78,20 @@ def main():
                 risk.update_strategy_weights(csv_path, window=50)
 
             for symbol in SYMBOLS:
-                print(f"正在處理幣種: {symbol}")                    ##測試加的
+                logger.debug(f"正在處理幣種: {symbol}")
                 bar = exchange.fetch_latest_bar(symbol, TIMEFRAME)
-                print(f"{symbol} 最新K線 bar: {bar}")               ##測試加的           
+                logger.debug(f"{symbol} 最新K線 bar: {bar}")
                 bars = exchange.fetch_ohlcv(symbol, TIMEFRAME, limit=100)
                 htf_bars = exchange.fetch_ohlcv(symbol, "1h", limit=100)
+                oi_df = exchange.fetch_oi_history(symbol, TIMEFRAME, limit=50)
 
                 for strategy_name, strategy in STRATEGY_MAP.items():
-                    print(f"策略: {strategy_name} 準備檢查訊號")    ##測試加的
+                    logger.debug(f"策略: {strategy_name} 準備檢查訊號")
                     key = (symbol, strategy_name)
                     entry = open_trades.get(key, None)
 
                     params = STRATEGY_PARAMS.get(strategy_name, {})
-                    sig, side, info = strategy.check_entry_signal(bar, bars, htf_bars, **params)
+                    sig, side, info = strategy.check_entry_signal(bar, bars, htf_bars, oi_df=oi_df, bars_for_cvd=bars, **params)
 
                     if sig and entry is None:
                         stop_price = info.get("stop", bar["low"] * 0.98 if side == "long" else bar["high"] * 1.02)
@@ -78,7 +108,8 @@ def main():
                                 "order_id": order['id'],
                                 "size": size
                             }
-                            print(f"[INFO] Open {symbol} [{strategy_name}]: {side}, size: {size}, entry: {bar['close']}")
+                            _save_open_trades(open_trades)
+                            logger.info(f"Open {symbol} [{strategy_name}]: {side}, size: {size}, entry: {bar['close']}")
 
                     if entry is not None:
                         should_exit = strategy.check_exit_signal(
@@ -92,7 +123,7 @@ def main():
                             pnl = (close_price - entry["entry_price"]) * entry["size"] if entry["side"] == "long" \
                                 else (entry["entry_price"] - close_price) * entry["size"]
                             risk.equity += pnl
-                            print(f"[INFO] equity 更新為 {risk.equity:.2f}（本筆 pnl={pnl:.2f}）")
+                            logger.info(f"equity 更新為 {risk.equity:.2f}（本筆 pnl={pnl:.2f}）")
                             trade_record = {
                                 "symbol": symbol,
                                 "strategy": strategy_name,
@@ -113,15 +144,16 @@ def main():
                                 trade_records_buffer.append(trade_record)
                             else:
                                 if trade_records_buffer:
-                                    print(f"[INFO] 補寫 {len(trade_records_buffer)} 筆buffer資料")
+                                    logger.info(f"補寫 {len(trade_records_buffer)} 筆buffer資料")
                                     for rec in trade_records_buffer:
                                         safe_append_to_csv(rec, csv_path, backup_path)
                                     trade_records_buffer.clear()
-                            print(f"[INFO] Closed {symbol} [{strategy_name}] position, logged to {csv_path}")
+                            logger.info(f"Closed {symbol} [{strategy_name}] position, logged to {csv_path}")
                             del open_trades[key]
+                            _save_open_trades(open_trades)
 
         except Exception as e:
-            print("[FATAL] 主流程異常:", e)
+            logger.error(f"主流程異常: {e}")
             time.sleep(60)
             continue
 
