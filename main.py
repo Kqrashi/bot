@@ -4,7 +4,7 @@ import time
 import pandas as pd
 from datetime import datetime
 
-from config import SYMBOLS, TIMEFRAME, STRATEGY_PARAMS, RISK_PARAMS, TRADE_LOG_DIR, BACKUP_DIR
+from config import SYMBOLS, TIMEFRAME, STRATEGY_PARAMS, RISK_PARAMS, TRADE_LOG_DIR, BACKUP_DIR, START_EQUITY
 from strategy import STRATEGY_MAP
 from exchange_helper import ExchangeHelper
 from risk import RiskEngine
@@ -27,7 +27,7 @@ def safe_append_to_csv(trade_record, csv_path, backup_path=None, max_retry=3):
 
 def main():
     exchange = ExchangeHelper()
-    risk = RiskEngine(equity=1000, risk_pct=RISK_PARAMS.get("risk_pct", 0.01))
+    risk = RiskEngine(equity=START_EQUITY, risk_pct=RISK_PARAMS.get("risk_pct", 0.01))
     open_trades = {}        # {(symbol, strategy): entry_info}
     trade_records_buffer = []
 
@@ -66,8 +66,7 @@ def main():
                     if sig and entry is None:
                         stop_price = info.get("stop", bar["low"] * 0.98 if side == "long" else bar["high"] * 1.02)
                         tp_price = info.get("tp", None)
-                        req = None  # 可依需求擴充
-                        size = risk.on_new_trade(req, strategy_name=strategy_name)
+                        size = risk.on_new_trade(info, strategy_name=strategy_name)
                         if size:
                             order = exchange.open_position(symbol, side, size)
                             open_trades[key] = {
@@ -92,6 +91,8 @@ def main():
                             close_price = bar['close']
                             pnl = (close_price - entry["entry_price"]) * entry["size"] if entry["side"] == "long" \
                                 else (entry["entry_price"] - close_price) * entry["size"]
+                            risk.equity += pnl
+                            print(f"[INFO] equity 更新為 {risk.equity:.2f}（本筆 pnl={pnl:.2f}）")
                             trade_record = {
                                 "symbol": symbol,
                                 "strategy": strategy_name,

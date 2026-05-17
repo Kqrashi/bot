@@ -34,8 +34,8 @@ def detect_ob(bars, direction="long"):
 # 設定AB級的距離閾值（放到函數最前面 or 全域參數，方便調整）
 AB_LEVEL_THRESHOLD = 0.01  # 或 0.003 / 0.01 依你想測試的寬鬆度
 
-def judge_signal_level(bars, htf_bars, close, direction="long"):
-    fvg_ok, fvg_range = detect_fvg(bars, direction=direction)
+def judge_signal_level(bars, htf_bars, close, direction="long", tol=0.004):
+    fvg_ok, fvg_range = detect_fvg(bars, tol=tol, direction=direction)
     ob_zone = detect_ob(bars, direction=direction)
     high = bars.iloc[-1]["high"]
     low = bars.iloc[-1]["low"]
@@ -108,20 +108,20 @@ class SMCStrategy:
             ma_fast > ma_slow and
             atr.iloc[-1] > 10
         ):
-            level = judge_signal_level(bars, htf_bars, close, direction="long")
+            level = judge_signal_level(bars, htf_bars, close, direction="long", tol=self.tol_fvg)
             if level:
                 ob_zone = detect_ob(bars, direction="long")
                 signal = True
                 side = "long"
                 if level == "A":
-                    stop = ob_zone[0] * 0.995 if ob_zone else bars["low"].iloc[-1] * 0.98
-                    tp = close * self.tp_r
-                elif level == "B":
+                    stop = ob_zone[0] * 0.998 if ob_zone else bars["low"].iloc[-1] * 0.98
+                elif level == "AB":
                     stop = ob_zone[0] * 0.997 if ob_zone else bars["low"].iloc[-1] * 0.985
-                    tp = close * self.tp_r
+                elif level == "B":
+                    stop = ob_zone[0] * 0.996 if ob_zone else bars["low"].iloc[-1] * 0.985
                 else:
-                    stop = bars["low"].iloc[-1] * 0.99
-                    tp = close * self.tp_r
+                    stop = bars["low"].iloc[-1] * 0.995
+                tp = close * self.tp_r
                 info = {"stop": stop, "tp": tp, "level": level}
                 return signal, side, info
 
@@ -131,20 +131,20 @@ class SMCStrategy:
             ma_fast < ma_slow and
             atr.iloc[-1] > 10
         ):
-            level = judge_signal_level(bars, htf_bars, close, direction="short")
+            level = judge_signal_level(bars, htf_bars, close, direction="short", tol=self.tol_fvg)
             if level:
                 ob_zone = detect_ob(bars, direction="short")
                 signal = True
                 side = "short"
                 if level == "A":
-                    stop = ob_zone[1] * 1.005 if ob_zone else bars["high"].iloc[-1] * 1.02
-                    tp = close * (2 - self.tp_r)
-                elif level == "B":
+                    stop = ob_zone[1] * 1.002 if ob_zone else bars["high"].iloc[-1] * 1.02
+                elif level == "AB":
                     stop = ob_zone[1] * 1.003 if ob_zone else bars["high"].iloc[-1] * 1.015
-                    tp = close * (2 - self.tp_r)
+                elif level == "B":
+                    stop = ob_zone[1] * 1.004 if ob_zone else bars["high"].iloc[-1] * 1.015
                 else:
-                    stop = bars["high"].iloc[-1] * 1.01
-                    tp = close * (2 - self.tp_r)
+                    stop = bars["high"].iloc[-1] * 1.005
+                tp = close * (2 - self.tp_r)
                 info = {"stop": stop, "tp": tp, "level": level}
                 return signal, side, info
 
@@ -157,48 +157,53 @@ class SMCStrategy:
             return True
         return False
 
+LEVEL_RANK = {"A": 3, "AB": 2, "B": 1, "C": 0}
+
+
 # === 放寬條件版 SMCStrategyLoose ===
 class SMCStrategyLoose(SMCStrategy):
     def check_entry_signal(self, bar, bars, htf_bars, **kwargs):
         close = bars["close"].iloc[-1]
-        # 多空都不過濾，直接根據信號分級
-        # 多單
-        level_long = judge_signal_level(bars, htf_bars, close, direction="long")
-        if level_long:
-            ob_zone = detect_ob(bars, direction="long")
-            signal = True
+        level_long = judge_signal_level(bars, htf_bars, close, direction="long", tol=self.tol_fvg)
+        level_short = judge_signal_level(bars, htf_bars, close, direction="short", tol=self.tol_fvg)
+        rank_long = LEVEL_RANK[level_long]
+        rank_short = LEVEL_RANK[level_short]
+
+        # 雙邊都是 C（無 confluence），或同分（方向矛盾），都跳過
+        if rank_long == rank_short:
+            return False, "", {}
+        if rank_long == 0 and rank_short == 0:
+            return False, "", {}
+
+        if rank_long > rank_short:
             side = "long"
-            if level_long == "A":
-                stop = ob_zone[0] * 0.995 if ob_zone else bars["low"].iloc[-1] * 0.98
-                tp = close * self.tp_r
-            elif level_long == "B":
+            level = level_long
+            ob_zone = detect_ob(bars, direction="long")
+            if level == "A":
+                stop = ob_zone[0] * 0.998 if ob_zone else bars["low"].iloc[-1] * 0.98
+            elif level == "AB":
                 stop = ob_zone[0] * 0.997 if ob_zone else bars["low"].iloc[-1] * 0.985
-                tp = close * self.tp_r
+            elif level == "B":
+                stop = ob_zone[0] * 0.996 if ob_zone else bars["low"].iloc[-1] * 0.985
             else:
-                stop = bars["low"].iloc[-1] * 0.99
-                tp = close * self.tp_r
-            info = {"stop": stop, "tp": tp, "level": level_long}
-            return signal, side, info
-
-        # 空單
-        level_short = judge_signal_level(bars, htf_bars, close, direction="short")
-        if level_short:
-            ob_zone = detect_ob(bars, direction="short")
-            signal = True
+                stop = bars["low"].iloc[-1] * 0.995
+            tp = close * self.tp_r
+        else:
             side = "short"
-            if level_short == "A":
-                stop = ob_zone[1] * 1.005 if ob_zone else bars["high"].iloc[-1] * 1.02
-                tp = close * (2 - self.tp_r)
-            elif level_short == "B":
+            level = level_short
+            ob_zone = detect_ob(bars, direction="short")
+            if level == "A":
+                stop = ob_zone[1] * 1.002 if ob_zone else bars["high"].iloc[-1] * 1.02
+            elif level == "AB":
                 stop = ob_zone[1] * 1.003 if ob_zone else bars["high"].iloc[-1] * 1.015
-                tp = close * (2 - self.tp_r)
+            elif level == "B":
+                stop = ob_zone[1] * 1.004 if ob_zone else bars["high"].iloc[-1] * 1.015
             else:
-                stop = bars["high"].iloc[-1] * 1.01
-                tp = close * (2 - self.tp_r)
-            info = {"stop": stop, "tp": tp, "level": level_short}
-            return signal, side, info
+                stop = bars["high"].iloc[-1] * 1.005
+            tp = close * (2 - self.tp_r)
 
-        return False, "", {}
+        info = {"stop": stop, "tp": tp, "level": level}
+        return True, side, info
 
 # === SMC + 趨勢過濾（僅保留原有多單邏輯） ===
 class SMCWithTrendStrategy:

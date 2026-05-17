@@ -21,7 +21,7 @@ class RiskEngine:
         if trade_request and "level" in trade_request:
             level = trade_request["level"]
         # 定義各等級投入比例
-        level_risk = {"A": 0.03, "B": 0.01, "C": 0.003}  # 最高3%、中1%、最低0.3%
+        level_risk = {"A": 0.03, "AB": 0.02, "B": 0.01, "C": 0.003}  # A 3%、AB 2%、B 1%、C 0.3%
         pct = level_risk.get(level, self.risk_pct)  # 預設風控比例
         size = self.equity * pct * self.get_strategy_weight(strategy_name)
         return size

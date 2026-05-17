@@ -16,11 +16,12 @@ class BaseSMCStrategy:
 
     def check_entry_signal(self, bar, bars, htf_bars, **kwargs):
         close = bars["close"].iloc[-1]
-        level = judge_signal_level(bars, htf_bars, close, direction="long")
-        if level not in self.allowed_levels:
+        level_long = judge_signal_level(bars, htf_bars, close, direction="long", tol=self.tol_fvg)
+        level_short = judge_signal_level(bars, htf_bars, close, direction="short", tol=self.tol_fvg)
+        if level_long not in self.allowed_levels and level_short not in self.allowed_levels:
             return False, "", {}
         return self.strategy.check_entry_signal(bar, bars, htf_bars, **kwargs)
-    
+
     def check_exit_signal(self, *args, **kwargs):
         return self.strategy.check_exit_signal(*args, **kwargs)
 
@@ -59,22 +60,22 @@ class FourHourStrategy(BaseSMCStrategy):
     # 可自定高級邏輯（例如主力級突破）
     def check_entry_signal(self, bar, bars, htf_bars, **kwargs):
         close = bars["close"].iloc[-1]
-        level = judge_signal_level(bars, htf_bars, close, direction="long")
-        if level not in self.allowed_levels:
-            return False, "", {}
-        # 只允許A/AB級且突破才做單
-        if level in ["A", "AB"] and close > bars["high"].iloc[-5:-1].max():
+        level_long = judge_signal_level(bars, htf_bars, close, direction="long", tol=self.tol_fvg)
+        level_short = judge_signal_level(bars, htf_bars, close, direction="short", tol=self.tol_fvg)
+
+        long_ok = level_long in self.allowed_levels and level_long in ["A", "AB"]
+        short_ok = level_short in self.allowed_levels and level_short in ["A", "AB"]
+
+        if long_ok and close > bars["high"].iloc[-5:-1].max():
             ob_zone = detect_ob(bars, direction="long")
             stop = ob_zone[0] * 0.99 if ob_zone else bars["low"].iloc[-1] * 0.98
             tp = close * self.tp_r
-            info = {"stop": stop, "tp": tp, "level": level}
-            return True, "long", info
-        if level in ["A", "AB"] and close < bars["low"].iloc[-5:-1].min():
+            return True, "long", {"stop": stop, "tp": tp, "level": level_long}
+        if short_ok and close < bars["low"].iloc[-5:-1].min():
             ob_zone = detect_ob(bars, direction="short")
             stop = ob_zone[1] * 1.01 if ob_zone else bars["high"].iloc[-1] * 1.02
             tp = close * (2 - self.tp_r)
-            info = {"stop": stop, "tp": tp, "level": level}
-            return True, "short", info
+            return True, "short", {"stop": stop, "tp": tp, "level": level_short}
         return False, "", {}
 
 # 你要加日線/週線策略，只要照這個 pattern 新增 class 即可
