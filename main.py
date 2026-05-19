@@ -5,7 +5,7 @@ import json
 import pandas as pd
 from datetime import datetime
 
-from config import SYMBOLS, TIMEFRAME, STRATEGY_PARAMS, RISK_PARAMS, TRADE_LOG_DIR, BACKUP_DIR, START_EQUITY
+from config import SYMBOLS, TIMEFRAME, STRATEGY_PARAMS, RISK_PARAMS, TRADE_LOG_DIR, BACKUP_DIR, START_EQUITY, FEE_RATE
 from strategy import STRATEGY_MAP
 from exchange_helper import ExchangeHelper
 from risk import RiskEngine
@@ -14,6 +14,17 @@ from logger import get_logger
 logger = get_logger(__name__)
 
 STATE_FILE = "open_trades_state.json"
+
+
+def get_current_session() -> str:
+    hour = datetime.utcnow().hour
+    if 0 <= hour < 8:
+        return "asia"
+    if 7 <= hour < 16:
+        return "london"
+    if 12 <= hour < 21:
+        return "ny"
+    return "off"
 
 
 def _save_open_trades(open_trades: dict) -> None:
@@ -122,8 +133,10 @@ def main():
                             close_price = bar['close']
                             pnl = (close_price - entry["entry_price"]) * entry["size"] if entry["side"] == "long" \
                                 else (entry["entry_price"] - close_price) * entry["size"]
+                            fee = entry["entry_price"] * entry["size"] * FEE_RATE * 2
+                            pnl_net = pnl - fee
                             risk.equity += pnl
-                            logger.info(f"equity 更新為 {risk.equity:.2f}（本筆 pnl={pnl:.2f}）")
+                            logger.info(f"equity 更新為 {risk.equity:.2f}（本筆 pnl={pnl:.2f}, fee={fee:.4f}, pnl_net={pnl_net:.2f}）")
                             trade_record = {
                                 "symbol": symbol,
                                 "strategy": strategy_name,
@@ -136,6 +149,9 @@ def main():
                                 "exit_time": close_time,
                                 "exit_price": close_price,
                                 "pnl": pnl,
+                                "fee": round(fee, 6),
+                                "pnl_net": round(pnl_net, 6),
+                                "session": get_current_session(),
                                 "order_id": entry["order_id"],
                                 "reason": "TP/SL/BMS/CHOCH"
                             }

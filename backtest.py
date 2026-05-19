@@ -35,7 +35,7 @@ def run_backtest(data_dir="historical_data", out_dir="backtest_results"):
         trade_logs = []
 
         # 嘗試載入對應 OI 資料
-        oi_path = f"historical_data/oi/{symbol}_{timeframe}_oi.csv"
+        oi_path = os.path.join("historical_data", "oi", f"{symbol}_{timeframe}_oi.csv")
         if os.path.exists(oi_path):
             oi_data = pd.read_csv(oi_path)
         else:
@@ -48,7 +48,7 @@ def run_backtest(data_dir="historical_data", out_dir="backtest_results"):
 
             # 切出當前 bar 時間點之前最近 50 筆 OI
             if oi_data is not None:
-                oi_df = oi_data[oi_data["ts"] <= bar["ts"]].tail(50)
+                oi_df = oi_data[oi_data["ts"] <= int(bar["ts"])].tail(50)
                 oi_df = oi_df if len(oi_df) >= 6 else None
             else:
                 oi_df = None
@@ -98,6 +98,9 @@ def run_backtest(data_dir="historical_data", out_dir="backtest_results"):
         # 匯出結果
         if trade_logs:
             df_log = pd.DataFrame(trade_logs)
+            oi_true = df_log["oi_filtered"].sum()
+            oi_false = len(df_log) - oi_true
+            print(f"[OI] {symbol} {timeframe}: oi_filtered True={oi_true}, False={oi_false} (共 {len(df_log)} 筆)")
             out_file = os.path.join(out_dir, f"backtest_{symbol}_{timeframe}_{StrategyClass.__name__}.csv")
             df_log.to_csv(out_file, index=False)
             print(f"[INFO] {out_file} 匯出 {len(trade_logs)} 筆回測交易")

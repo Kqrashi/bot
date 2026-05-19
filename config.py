@@ -60,6 +60,9 @@ RISK_PARAMS = {
     "risk_pct": 0.01           # 單單風險佔比
 }
 
+# 手續費設定
+FEE_RATE = 0.0005  # OKX taker 手續費 0.05%（進出各一次）
+
 # 報告/資料夾
 REPORT_DIR = "reports"
 TRADE_LOG_DIR = "trade_logs"

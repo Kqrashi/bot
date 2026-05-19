@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python backtest.py)"
+      "Bash(python backtest.py)",
+      "Bash(dir *)",
+      "Bash(findstr /v \"^oi\")",
+      "Bash(python *)",
+      "Skill(update-config)"
     ]
   }
 }

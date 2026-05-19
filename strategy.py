@@ -90,13 +90,20 @@ def judge_signal_level(bars, htf_bars, close, direction="long", tol=0.004):
 
 
 def _passes_oi_cvd_filter(side, oi_df, bars_for_cvd):
-    checks = []
-    if oi_df is not None and len(oi_df) >= 6:
-        checks.append(bool(oi_df["oi"].iloc[-1] > oi_df["oi"].iloc[-6]))
+    if oi_df is None or len(oi_df) < 6:
+        return True
+
+    oi_rising = bool(oi_df["oi"].iloc[-1] > oi_df["oi"].iloc[-6])
+    if not oi_rising:
+        return False
+
     if bars_for_cvd is not None:
         _, cvd_change = ExchangeHelper.calc_cvd(bars_for_cvd)
-        checks.append(cvd_change > 0 if side == "long" else cvd_change < 0)
-    return all(checks)
+        cvd_ok = cvd_change > 0 if side == "long" else cvd_change < 0
+        if not cvd_ok:
+            return False
+
+    return True
 
 
 # === SMCStrategy 多空通用 ===

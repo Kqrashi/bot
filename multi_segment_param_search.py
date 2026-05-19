@@ -1,10 +1,49 @@
 import os
 import glob
+import math
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 from strategy import SMCStrategy, SMCStrategyLoose
+
+
+def compute_metrics(trade_logs):
+    """計算 Sharpe、Max Drawdown、Profit Factor。"""
+    n = len(trade_logs)
+
+    # Sharpe
+    if n < 10:
+        sharpe = float("nan")
+    else:
+        mean = sum(trade_logs) / n
+        variance = sum((p - mean) ** 2 for p in trade_logs) / n
+        std = math.sqrt(variance)
+        sharpe = (mean / std * math.sqrt(252)) if std > 0 else float("nan")
+
+    # Max Drawdown
+    if n == 0:
+        max_drawdown = float("nan")
+    else:
+        peak = 0.0
+        cumulative = 0.0
+        max_dd = 0.0
+        for pnl in trade_logs:
+            cumulative += pnl
+            if cumulative > peak:
+                peak = cumulative
+            if peak > 0:
+                dd = (peak - cumulative) / peak
+                if dd > max_dd:
+                    max_dd = dd
+        max_drawdown = max_dd
+
+    # Profit Factor
+    gains = sum(p for p in trade_logs if p > 0)
+    losses = sum(p for p in trade_logs if p < 0)
+    profit_factor = (gains / abs(losses)) if losses < 0 else float("nan")
+
+    return sharpe, max_drawdown, profit_factor
 
 
 # === 0. 讀取 historical_data 資料夾下全部 .csv 檔 ===
@@ -74,6 +113,7 @@ for data_path in csv_files:
                     # 統計結果
                     total_pnl = sum(trade_logs)
                     win_rate = sum([1 for p in trade_logs if p > 0]) / len(trade_logs) if trade_logs else 0
+                    sharpe, max_drawdown, profit_factor = compute_metrics(trade_logs)
                     segment_results.append({
                         "區間": f"{start.strftime('%Y-%m-%d')}~{end.strftime('%Y-%m-%d')}",
                         "strategy": strategy_name,
@@ -81,7 +121,10 @@ for data_path in csv_files:
                         "tol_fvg": tol_fvg,
                         "總損益": total_pnl,
                         "勝率": win_rate,
-                        "單數": len(trade_logs)
+                        "單數": len(trade_logs),
+                        "sharpe": sharpe,
+                        "max_drawdown": max_drawdown,
+                        "profit_factor": profit_factor,
                     })
         # 本段小表
         seg_df_out = pd.DataFrame(segment_results)
@@ -91,6 +134,7 @@ for data_path in csv_files:
         all_summary.extend(segment_results)
 
     # === 4. 匯出總績效總表 ===
+    summary_df = pd.DataFrame(all_summary)
     summary_path = f"{result_dir}/{symbol}_rolling_param_search_summary.csv"
     summary_df.to_csv(summary_path, index=False, encoding="utf-8-sig")
     print(f"\n[{symbol}] 所有區間回測與參數搜尋已完成！總績效表已輸出：{summary_path}")
@@ -115,11 +159,11 @@ for data_path in csv_files:
     # === 6. 每段最佳參數與分布表 ===
     best_params_path = f"{result_dir}/{symbol}_best_params_by_segment.csv"
     best_params = summary_df.groupby(['區間','strategy']).apply(
-        lambda x: x.sort_values('總損益', ascending=False).iloc[0]
+        lambda x: x.sort_values(['sharpe', '總損益'], ascending=[False, False], na_position='last').iloc[0]
     ).reset_index(drop=True)
     best_params.to_csv(best_params_path, index=False, encoding='utf-8-sig')
     print(f"\n[{symbol}] 已輸出每區間最佳參數分布表：{best_params_path}")
-    print(best_params[['區間','strategy','tp_r','tol_fvg','總損益','勝率','單數']])
+    print(best_params[['區間','strategy','tp_r','tol_fvg','總損益','勝率','單數','sharpe','max_drawdown','profit_factor']])
 
     # === 7. Walk-Forward測試 ===
     walkforward_logs = []
@@ -162,6 +206,7 @@ for data_path in csv_files:
                         entry = None
             total_pnl = sum(trade_logs)
             win_rate = sum([1 for p in trade_logs if p > 0]) / len(trade_logs) if trade_logs else 0
+            sharpe, max_drawdown, profit_factor = compute_metrics(trade_logs)
             walkforward_logs.append({
                 "應用區間": this_name,
                 "策略": strat,
@@ -169,7 +214,10 @@ for data_path in csv_files:
                 "tol_fvg": best_tol_fvg,
                 "總損益": total_pnl,
                 "勝率": win_rate,
-                "單數": len(trade_logs)
+                "單數": len(trade_logs),
+                "sharpe": sharpe,
+                "max_drawdown": max_drawdown,
+                "profit_factor": profit_factor,
             })
 
     walkforward_path = f"{result_dir}/{symbol}_walk_forward_results.csv"

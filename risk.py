@@ -40,10 +40,23 @@ class RiskEngine:
             strat_df = df[df['strategy'] == strategy].tail(window)
             winrate = (strat_df['pnl'] > 0).sum() / len(strat_df) if len(strat_df) > 0 else 0
             drawdown = self._compute_drawdown(strat_df['pnl'])
+            degrading = False
+            degradation_score = 0.0
+            if len(strat_df) >= 20:
+                recent_wr = strat_df.tail(20)['pnl'].gt(0).mean()
+                older = strat_df.iloc[-50:-20] if len(strat_df) >= 50 else strat_df.iloc[:-20]
+                older_wr = older['pnl'].gt(0).mean() if len(older) > 0 else recent_wr
+                degradation_score = round(float(older_wr - recent_wr), 4)
+                degrading = degradation_score > 0.15
+                if degrading:
+                    _log.warning(f"策略{strategy}偵測到退化，degradation_score={degradation_score:.2f}")
+
             self.strategy_stats[strategy] = {
                 "winrate": winrate,
                 "drawdown": drawdown,
-                "consecutive_loss": self._compute_consecutive_loss(strat_df['pnl'])
+                "consecutive_loss": self._compute_consecutive_loss(strat_df['pnl']),
+                "degrading": degrading,
+                "degradation_score": degradation_score
             }
             # 動態權重算法
             if winrate > 0.6:
