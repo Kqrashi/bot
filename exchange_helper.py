@@ -46,16 +46,46 @@ class ExchangeHelper:
         df = self.fetch_ohlcv(symbol, timeframe, limit=2)
         return df.iloc[-1].to_dict()
 
-    def open_position(self, symbol, side, size):
-        # 實盤下單，請根據API需求調整
-        _log.info(f"open_position: {symbol}, {side}, {size}")
-        # demo用假order id
-        return {"id": f"order_{int(time.time())}", "status": "open"}
+    def open_position(self, symbol, side, size_contracts, max_retry=3):
+        _log.info(f"open_position: {symbol} {side} {size_contracts} contracts")
+        for attempt in range(max_retry):
+            try:
+                import ccxt
+                order = self.exchange.create_order(
+                    symbol, "market", side, size_contracts,
+                    params={"tdMode": "cross", "posSide": "net"}
+                )
+                return {"id": order["id"], "status": order.get("status", "open")}
+            except ccxt.NetworkError as e:
+                _log.warning(f"open_position 網路錯誤(第{attempt+1}次): {e}")
+                time.sleep(2 ** attempt)
+            except Exception as e:
+                _log.error(f"open_position 失敗: {e}")
+                from notifier import notify_error
+                notify_error("open_position", e)
+                return None
+        _log.error("open_position 重試耗盡")
+        return None
 
-    def close_position(self, symbol, order_id):
-        _log.info(f"close_position: {symbol}, order_id={order_id}")
-        # demo自動回傳已平倉
-        return {"id": order_id, "status": "closed"}
+    def close_position(self, symbol, side, size_contracts, max_retry=3):
+        close_side = "sell" if side == "long" else "buy"
+        _log.info(f"close_position: {symbol} {close_side} {size_contracts} contracts")
+        for attempt in range(max_retry):
+            try:
+                import ccxt
+                order = self.exchange.create_order(
+                    symbol, "market", close_side, size_contracts,
+                    params={"tdMode": "cross", "posSide": "net", "reduceOnly": True}
+                )
+                return {"id": order["id"], "status": order.get("status", "closed")}
+            except ccxt.NetworkError as e:
+                _log.warning(f"close_position 網路錯誤(第{attempt+1}次): {e}")
+                time.sleep(2 ** attempt)
+            except Exception as e:
+                _log.error(f"close_position 失敗: {e}")
+                return None
+        _log.error("close_position 重試耗盡")
+        return None
 
     def fetch_balance(self):
         return self.exchange.fetch_balance()

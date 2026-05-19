@@ -140,7 +140,17 @@ class SMCStrategy:
                 else:
                     stop = bars["low"].iloc[-1] * 0.995
                 tp = close * self.tp_r
-                info = {"stop": stop, "tp": tp, "level": level}
+                fvg_ok_l, fvg_range_l = detect_fvg(bars, tol=self.tol_fvg, direction="long")
+                cvd_now, _ = calc_cvd(bars_for_cvd) if bars_for_cvd is not None else (None, None)
+                oi_rising = bool(oi_df["oi"].iloc[-1] > oi_df["oi"].iloc[-6]) if oi_df is not None and len(oi_df) >= 6 else None
+                info = {
+                    "stop": stop, "tp": tp, "level": level,
+                    "fvg_mid": round((fvg_range_l[0] + fvg_range_l[1]) / 2, 4) if fvg_ok_l and fvg_range_l else None,
+                    "ob_low": round(ob_zone[0], 4) if ob_zone else None,
+                    "ob_high": round(ob_zone[1], 4) if ob_zone else None,
+                    "cvd_now": round(float(cvd_now), 4) if cvd_now is not None else None,
+                    "oi_rising": oi_rising,
+                }
                 if not _passes_oi_cvd_filter("long", oi_df, bars_for_cvd):
                     return False, "", {}
                 return signal, side, info
@@ -165,7 +175,17 @@ class SMCStrategy:
                 else:
                     stop = bars["high"].iloc[-1] * 1.005
                 tp = close * (2 - self.tp_r)
-                info = {"stop": stop, "tp": tp, "level": level}
+                fvg_ok_s, fvg_range_s = detect_fvg(bars, tol=self.tol_fvg, direction="short")
+                cvd_now, _ = calc_cvd(bars_for_cvd) if bars_for_cvd is not None else (None, None)
+                oi_rising = bool(oi_df["oi"].iloc[-1] > oi_df["oi"].iloc[-6]) if oi_df is not None and len(oi_df) >= 6 else None
+                info = {
+                    "stop": stop, "tp": tp, "level": level,
+                    "fvg_mid": round((fvg_range_s[0] + fvg_range_s[1]) / 2, 4) if fvg_ok_s and fvg_range_s else None,
+                    "ob_low": round(ob_zone[0], 4) if ob_zone else None,
+                    "ob_high": round(ob_zone[1], 4) if ob_zone else None,
+                    "cvd_now": round(float(cvd_now), 4) if cvd_now is not None else None,
+                    "oi_rising": oi_rising,
+                }
                 if not _passes_oi_cvd_filter("short", oi_df, bars_for_cvd):
                     return False, "", {}
                 return signal, side, info
@@ -173,11 +193,17 @@ class SMCStrategy:
         return False, "", {}
 
     def check_exit_signal(self, bar, bars, side, entry_price, stop, tp, **kwargs):
-        if side == "long" and (bar["close"] <= stop or bar["close"] >= tp):
-            return True
-        if side == "short" and (bar["close"] >= stop or bar["close"] <= tp):
-            return True
-        return False
+        if side == "long":
+            if bar["close"] <= stop:
+                return True, "SL_HIT"
+            if bar["close"] >= tp:
+                return True, "TP_HIT"
+        if side == "short":
+            if bar["close"] >= stop:
+                return True, "SL_HIT"
+            if bar["close"] <= tp:
+                return True, "TP_HIT"
+        return False, ""
 
 LEVEL_RANK = {"A": 3, "AB": 2, "B": 1, "C": 0}
 
@@ -224,7 +250,17 @@ class SMCStrategyLoose(SMCStrategy):
                 stop = bars["high"].iloc[-1] * 1.005
             tp = close * (2 - self.tp_r)
 
-        info = {"stop": stop, "tp": tp, "level": level}
+        fvg_ok_i, fvg_range_i = detect_fvg(bars, tol=self.tol_fvg, direction=side)
+        cvd_now_i, _ = calc_cvd(bars_for_cvd) if bars_for_cvd is not None else (None, None)
+        oi_rising_i = bool(oi_df["oi"].iloc[-1] > oi_df["oi"].iloc[-6]) if oi_df is not None and len(oi_df) >= 6 else None
+        info = {
+            "stop": stop, "tp": tp, "level": level,
+            "fvg_mid": round((fvg_range_i[0] + fvg_range_i[1]) / 2, 4) if fvg_ok_i and fvg_range_i else None,
+            "ob_low": round(ob_zone[0], 4) if ob_zone else None,
+            "ob_high": round(ob_zone[1], 4) if ob_zone else None,
+            "cvd_now": round(float(cvd_now_i), 4) if cvd_now_i is not None else None,
+            "oi_rising": oi_rising_i,
+        }
         if not _passes_oi_cvd_filter(side, oi_df, bars_for_cvd):
             return False, "", {}
         return True, side, info
@@ -257,14 +293,21 @@ class SMCWithTrendStrategy:
             side = "long"
             info["stop"] = bars["low"].iloc[-1] * 0.98
             info["tp"] = close * self.tp_r
+            info["level"] = "B"
         return signal, side, info
 
     def check_exit_signal(self, bar, bars, side, entry_price, stop, tp, **kwargs):
-        if side == "long" and (bar["close"] <= stop or bar["close"] >= tp):
-            return True
-        if side == "short" and (bar["close"] >= stop or bar["close"] <= tp):
-            return True
-        return False
+        if side == "long":
+            if bar["close"] <= stop:
+                return True, "SL_HIT"
+            if bar["close"] >= tp:
+                return True, "TP_HIT"
+        if side == "short":
+            if bar["close"] >= stop:
+                return True, "SL_HIT"
+            if bar["close"] <= tp:
+                return True, "TP_HIT"
+        return False, ""
 
 # 策略註冊表
 STRATEGY_MAP = {

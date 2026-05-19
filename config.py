@@ -63,7 +63,25 @@ RISK_PARAMS = {
 # 手續費設定
 FEE_RATE = 0.0005  # OKX taker 手續費 0.05%（進出各一次）
 
+# Telegram 通報開關（需在 .env 設定 TELEGRAM_BOT_TOKEN 和 TELEGRAM_CHAT_ID）
+TELEGRAM_ENABLED = False
+
 # 報告/資料夾
 REPORT_DIR = "reports"
 TRADE_LOG_DIR = "trade_logs"
 BACKUP_DIR = "trade_log_backups"
+
+# 合約張數換算（OKX 合約大小）
+CONTRACT_SIZE = {"BTC/USDT": 0.01, "ETH/USDT": 0.1}
+
+# 數據品質：單 bar 最大允許漲跌幅
+MAX_PRICE_JUMP_PCT = 0.05
+
+# 全局每日熔斷：單日淨損失超此比例時停止所有策略
+DAILY_LOSS_LIMIT_PCT = 0.05
+
+# 策略模式："classic" 使用 STRATEGY_MAP，"periodic" 使用 STRATEGY_PERIODIC_MAP
+STRATEGY_MODE = "classic"
+
+# HTF 方向確認升級信號等級
+HTF_UPGRADE_ENABLED = False

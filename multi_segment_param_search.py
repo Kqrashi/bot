@@ -22,6 +22,18 @@ strategy_classes = {
     "smc_loose": SMCStrategyLoose
 }
 
+def _select_best(df):
+    df = df[df['單數'] > 0]
+    if df.empty:
+        return None
+    profitable = df[df['profit_factor'] > 1]
+    pool = profitable if not profitable.empty else df
+    valid = pool[pool['sharpe'].notna()]
+    if not valid.empty:
+        return valid.sort_values(['sharpe', '總損益_pct'], ascending=[False, False]).iloc[0]
+    return pool.sort_values('總損益_pct', ascending=False).iloc[0]
+
+
 for data_path in csv_files:
     print(f"處理檔案：{data_path}")
     symbol = os.path.basename(data_path).replace(".csv", "")
@@ -89,7 +101,7 @@ for data_path in csv_files:
                                     exit_price = entry["tp"]
 
                             if exit_price is None:
-                                should_exit = strategy.check_exit_signal(
+                                should_exit, _ = strategy.check_exit_signal(
                                     bar, bars, entry["side"], entry["entry_price"], entry["stop"], entry["tp"]
                                 )
                                 if should_exit:
@@ -147,31 +159,30 @@ for data_path in csv_files:
             df_seg = summary_df[(summary_df['區間']==seg_name) & (summary_df['strategy']==strat)]
             if df_seg.empty:
                 continue
-            for metric, label in [("sharpe", "Sharpe"), ("總損益_pct", "總損益%")]:
-                try:
-                    heatmap_data = df_seg.pivot(index='tp_r', columns='tol_fvg', values=metric)
-                    heatmap_path = f"{result_dir}/{symbol}_heatmap_{strat}_{metric}_{seg_name.replace('~','_')}.png"
-                    plt.figure(figsize=(6,4))
-                    sns.heatmap(heatmap_data, annot=True, fmt=".3f", cmap='coolwarm')
-                    plt.title(f"{strat} {label} Heatmap\n({seg_name})")
-                    plt.ylabel("tp_r")
-                    plt.xlabel("tol_fvg")
-                    plt.tight_layout()
-                    plt.savefig(heatmap_path)
-                    plt.close()
-                except Exception as e:
-                    print(f"  [WARN] heatmap 繪製失敗 {strat} {metric} {seg_name}: {e}")
+            try:
+                heatmap_data = df_seg.pivot(index='tp_r', columns='tol_fvg', values='sharpe')
+                heatmap_path = f"{result_dir}/{symbol}_heatmap_{strat}_sharpe_{seg_name.replace('~','_')}.png"
+                plt.figure(figsize=(6,4))
+                sns.heatmap(heatmap_data, annot=True, fmt=".3f", cmap='coolwarm')
+                plt.title(f"{strat} Sharpe Ratio Heatmap ({seg_name})")
+                plt.ylabel("tp_r")
+                plt.xlabel("tol_fvg")
+                plt.tight_layout()
+                plt.savefig(heatmap_path)
+                plt.close()
+            except Exception as e:
+                print(f"  [WARN] heatmap failed {strat} sharpe {seg_name}: {e}")
 
-    # === 6. 每段最佳參數（最少 30 單才納入選擇） ===
-    valid_summary = summary_df[summary_df['單數'] >= 30].copy()
-    if valid_summary.empty:
-        print(f"[警告] {symbol} 所有參數組合單數不足 30，改用全部資料選最佳參數")
-        valid_summary = summary_df.copy()
-
+    # === 6. 每段最佳參數 ===
+    valid_summary = summary_df.copy()
     best_params_path = f"{result_dir}/{symbol}_best_params_by_segment.csv"
-    best_params = valid_summary.groupby(['區間','strategy']).apply(
-        lambda x: x.sort_values(['sharpe', '總損益_pct'], ascending=[False, False], na_position='last').iloc[0]
-    ).reset_index(drop=True)
+    best_params = (
+        valid_summary
+        .groupby(['區間', 'strategy'], group_keys=False)
+        .apply(_select_best)
+        .dropna(how='all')
+        .reset_index(drop=True)
+    )
     best_params.to_csv(best_params_path, index=False, encoding='utf-8-sig')
     print(f"\n[{symbol}] 已輸出每區間最佳參數分布表：{best_params_path}")
     print(best_params[['區間','strategy','tp_r','tol_fvg','總損益_pct','勝率','單數','sharpe','max_drawdown','profit_factor']])
@@ -226,7 +237,7 @@ for data_path in csv_files:
                             exit_price = entry["tp"]
 
                     if exit_price is None:
-                        should_exit = strategy.check_exit_signal(
+                        should_exit, _ = strategy.check_exit_signal(
                             bar, bars, entry["side"], entry["entry_price"], entry["stop"], entry["tp"]
                         )
                         if should_exit:

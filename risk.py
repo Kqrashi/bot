@@ -1,7 +1,10 @@
 # risk.py
 import pandas as pd
 import os
+from datetime import datetime
 from logger import get_logger
+from notifier import notify_strategy_paused
+import config
 
 _log = get_logger(__name__)
 
@@ -9,11 +12,13 @@ class RiskEngine:
     def __init__(self, equity=1000, risk_pct=0.01):
         self.equity = equity
         self.risk_pct = risk_pct
-        self.strategy_weights = {}  # 每個策略動態資金分配
+        self.strategy_weights = {}
         self.paused_strategies = set()
         self.max_drawdown_pct = 0.2
         self.max_consecutive_loss = 4
         self.strategy_stats = {}
+        self.global_halt = False
+        self._halt_date = None
 
     def on_new_trade(self, trade_request, strategy_name="default"):
         if strategy_name in self.paused_strategies:
@@ -69,6 +74,7 @@ class RiskEngine:
             if drawdown > self.max_drawdown_pct or self.strategy_stats[strategy]['consecutive_loss'] >= self.max_consecutive_loss:
                 self.paused_strategies.add(strategy)
                 _log.warning(f"策略{strategy}已達停單條件，暫停交易！")
+                notify_strategy_paused(strategy, f"drawdown={drawdown:.2%} consecutive_loss={self.strategy_stats[strategy]['consecutive_loss']}")
             else:
                 self.paused_strategies.discard(strategy)
 
@@ -92,3 +98,22 @@ class RiskEngine:
             count = count + 1 if v == 1 else 0
             max_count = max(max_count, count)
         return max_count
+
+    def check_daily_loss(self, daily_pnl: float) -> None:
+        today = datetime.utcnow().date()
+        if self._halt_date != today:
+            self.global_halt = False
+            self._halt_date = today
+        limit = -self.equity * config.DAILY_LOSS_LIMIT_PCT
+        if daily_pnl < limit and not self.global_halt:
+            self.global_halt = True
+            _log.warning(f"每日熔斷觸發：daily_pnl={daily_pnl:.2f} < {limit:.2f}")
+            notify_strategy_paused("ALL", f"單日損失達 {config.DAILY_LOSS_LIMIT_PCT*100:.0f}%")
+
+    def pause_all(self) -> None:
+        self.global_halt = True
+        _log.info("手動暫停所有策略")
+
+    def resume_all(self) -> None:
+        self.global_halt = False
+        _log.info("手動恢復所有策略")
