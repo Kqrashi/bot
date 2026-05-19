@@ -1,7 +1,7 @@
 # strategy.py
 import pandas as pd
 import pandas_ta as ta
-from exchange_helper import ExchangeHelper
+from indicators import calc_cvd
 
 # === OB/FVG ===
 def detect_fvg(bars, tol=0.004, direction="long"):
@@ -98,7 +98,7 @@ def _passes_oi_cvd_filter(side, oi_df, bars_for_cvd):
         return False
 
     if bars_for_cvd is not None:
-        _, cvd_change = ExchangeHelper.calc_cvd(bars_for_cvd)
+        _, cvd_change = calc_cvd(bars_for_cvd)
         cvd_ok = cvd_change > 0 if side == "long" else cvd_change < 0
         if not cvd_ok:
             return False

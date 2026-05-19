@@ -1,8 +1,11 @@
 import os
 import pandas as pd
 from datetime import datetime
-from strategy import SMCStrategy, SMCStrategyLoose
+from strategy import SMCStrategy, SMCStrategyLoose, judge_signal_level
+from constants import ALLOWED_LEVELS_MAP
 import glob
+
+FEE_RATE = 0.001  # 進出各 0.05%，合計 0.1%
 
 os.makedirs("search_results", exist_ok=True)
 
@@ -21,7 +24,8 @@ for csv_path in csv_files:
     parts = filename.split('_')
     symbol = parts[0]         # BTCUSDT 或 ETHUSDT
     timeframe = parts[1]      # 1h, 4h, 15m, 30m, ...
-    print(f"\n====== 目前處理 {symbol} ======")
+    allowed_levels = ALLOWED_LEVELS_MAP.get(timeframe, ["A", "AB", "B", "C"])
+    print(f"\n====== 目前處理 {symbol} {timeframe}（允許級別：{allowed_levels}）======")
     df = pd.read_csv(csv_path)
     for strategy_name, strategy_class in strategy_classes.items():
         for tp_r in [1.05, 1.1, 1.15, 1.2]:
@@ -34,6 +38,9 @@ for csv_path in csv_files:
                     htf_bars = df.iloc[max(0, i-500):i]
                     bar = bars.iloc[-1]
                     sig, side, info = strategy.check_entry_signal(bar, bars, htf_bars)
+                    # 套用 ALLOWED_LEVELS_MAP 過濾
+                    if sig and info.get("level") not in allowed_levels:
+                        sig = False
                     if sig and entry is None:
                         entry = {
                             "side": side,
@@ -48,8 +55,9 @@ for csv_path in csv_files:
                             bar, bars, entry["side"], entry["entry_price"], entry["stop"], entry["tp"]
                         )
                         if should_exit:
-                            pnl = (bar["close"] - entry["entry_price"]) if entry["side"] == "long" else (entry["entry_price"] - bar["close"])
-                            trade_logs.append(pnl)
+                            pnl = (bar["close"] - entry["entry_price"]) / entry["entry_price"] if entry["side"] == "long" \
+                                else (entry["entry_price"] - bar["close"]) / entry["entry_price"]
+                            trade_logs.append(pnl - FEE_RATE)
                             entry = None
                 # 統計結果
                 total_pnl = sum(trade_logs)

@@ -57,25 +57,22 @@ class FourHourStrategy(BaseSMCStrategy):
     TP_R_DEFAULT = 1.22
     TOL_FVG_DEFAULT = 0.0025
 
-    # 可自定高級邏輯（例如主力級突破）
+    # 4h 額外要求突破確認，level 過濾已由 BaseSMCStrategy 處理
     def check_entry_signal(self, bar, bars, htf_bars, **kwargs):
+        sig, side, info = super().check_entry_signal(bar, bars, htf_bars, **kwargs)
+        if not sig:
+            return False, "", {}
         close = bars["close"].iloc[-1]
-        level_long = judge_signal_level(bars, htf_bars, close, direction="long", tol=self.tol_fvg)
-        level_short = judge_signal_level(bars, htf_bars, close, direction="short", tol=self.tol_fvg)
-
-        long_ok = level_long in self.allowed_levels and level_long in ["A", "AB"]
-        short_ok = level_short in self.allowed_levels and level_short in ["A", "AB"]
-
-        if long_ok and close > bars["high"].iloc[-5:-1].max():
+        if side == "long" and close > bars["high"].iloc[-5:-1].max():
             ob_zone = detect_ob(bars, direction="long")
-            stop = ob_zone[0] * 0.99 if ob_zone else bars["low"].iloc[-1] * 0.98
-            tp = close * self.tp_r
-            return True, "long", {"stop": stop, "tp": tp, "level": level_long}
-        if short_ok and close < bars["low"].iloc[-5:-1].min():
+            info["stop"] = ob_zone[0] * 0.99 if ob_zone else bars["low"].iloc[-1] * 0.98
+            info["tp"] = close * self.tp_r
+            return True, "long", info
+        if side == "short" and close < bars["low"].iloc[-5:-1].min():
             ob_zone = detect_ob(bars, direction="short")
-            stop = ob_zone[1] * 1.01 if ob_zone else bars["high"].iloc[-1] * 1.02
-            tp = close * (2 - self.tp_r)
-            return True, "short", {"stop": stop, "tp": tp, "level": level_short}
+            info["stop"] = ob_zone[1] * 1.01 if ob_zone else bars["high"].iloc[-1] * 1.02
+            info["tp"] = close * (2 - self.tp_r)
+            return True, "short", info
         return False, "", {}
 
 # 你要加日線/週線策略，只要照這個 pattern 新增 class 即可

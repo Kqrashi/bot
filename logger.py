@@ -1,7 +1,7 @@
 # logger.py
 import logging
 import os
-from datetime import datetime
+from logging.handlers import TimedRotatingFileHandler
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -21,8 +21,10 @@ def get_logger(name: str) -> logging.Logger:
     logger.addHandler(console_handler)
 
     os.makedirs("logs", exist_ok=True)
-    log_filename = os.path.join("logs", f"bot_{datetime.now().strftime('%Y-%m-%d')}.log")
-    file_handler = logging.FileHandler(log_filename, encoding="utf-8")
+    log_filename = os.path.join("logs", "bot.log")
+    file_handler = TimedRotatingFileHandler(
+        log_filename, when="midnight", backupCount=30, encoding="utf-8"
+    )
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 

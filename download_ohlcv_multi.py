@@ -5,12 +5,12 @@ import time
 
 # ==== 1. 設定你要抓的幣種和 timeframe ====
 symbols = ['BTC/USDT', 'ETH/USDT']      # 想抓更多幣只要加在這
-timeframes = ['15m', '30m', '1h', '4h']              # 可以加 '4h', '1d' 等
+timeframes = ['5m', '15m', '30m', '1h', '4h']              # 可以加 '4h', '1d' 等
 
 # ==== 2. 下載歷史區間設定 ====
 start_date = '2023-01-01T00:00:00Z'   # 從哪一天開始抓，可以自訂
 max_limit = 1000                      # ccxt 單次最多 1000 根
-exchange = ccxt.binance()
+exchange = ccxt.okx({"enableRateLimit": True})
 
 # ==== 3. 建立存放資料的資料夾 ====
 os.makedirs("historical_data", exist_ok=True)
